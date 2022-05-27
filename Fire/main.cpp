@@ -9,6 +9,10 @@ using namespace std;
 constexpr auto swidth = 600;
 constexpr auto sheight = 1100;
 
+constexpr unsigned int SHP = 4;
+
+constexpr auto hurttime = 1000;//ms
+
 bool PointInRect(int x, int y, RECT& r)
 {
 	return (r.left <= x && x <= r.right && r.top <= y && y <= r.bottom);
@@ -76,6 +80,7 @@ void Welcome()
 
 void Over(unsigned long long &kill)
 {
+	printf_s("o");
 	TCHAR* str = new TCHAR[128];
 	_stprintf_s(str, 128, _T("»÷É±Êý£º%llu"), kill);
 
@@ -125,7 +130,7 @@ class Hero
 {
 public:
 	Hero(IMAGE& img)
-		:img(img)
+		:img(img), HP(SHP)
 	{
 		rect.left = swidth / 2 - img.getwidth() / 2;
 		rect.top = sheight - img.getheight();
@@ -134,7 +139,10 @@ public:
 	}
 	void Show()
 	{
+		setlinecolor(RED);
+		setlinestyle(PS_SOLID, 4);
 		putimage(rect.left, rect.top, &img);
+		line(rect.left, rect.top - 5, rect.left + (img.getwidth() / SHP * HP), rect.top - 5);
 	}
 	void Control()
 	{
@@ -147,20 +155,32 @@ public:
 			rect.bottom = rect.top + img.getheight();
 		}
 	}
+
+	bool hurt()
+	{
+		HP--;
+		return (HP == 0) ? false : true;
+	}
+
 	RECT& GetRect() { return rect; }
 
 private:
 	IMAGE& img;
 	RECT rect;
 
+	unsigned int HP;
+
 };
 
 class Enemy
 {
 public:
-	Enemy(IMAGE& img, int x)
-		:img(img)
+	Enemy(IMAGE& img, int x, IMAGE*& boom)
+		:img(img), isdie(false), boomsum(0)
 	{
+		selfboom[0] = boom[0];
+		selfboom[1] = boom[1];
+		selfboom[2] = boom[2];
 		rect.left = x;
 		rect.right = rect.left + img.getwidth();
 		rect.top = -img.getheight();
@@ -168,6 +188,19 @@ public:
 	}
 	bool Show()
 	{
+
+		if (isdie)
+		{
+			if (boomsum == 3)
+			{
+				return false;
+			}
+			putimage(rect.left, rect.top, selfboom + boomsum);
+			boomsum++;
+
+			return true;
+		}
+
 		if (rect.top >= sheight)
 		{
 			return false;
@@ -178,13 +211,21 @@ public:
 
 		return true;
 	}
-	RECT& GetRect() { return rect; }
 
+	void Isdie()
+	{
+		isdie = true;
+	}
+
+	RECT& GetRect() { return rect; }
 
 private:
 	IMAGE& img;
 	RECT rect;
+	IMAGE selfboom[3];
 
+	bool isdie;
+	int boomsum;
 };
 
 class Bullet
@@ -207,17 +248,45 @@ public:
 		rect.top -= 3;
 		rect.bottom -= 3;
 		putimage(rect.left, rect.top, &img);
+
+		return true;
 	}
 	RECT& GetRect() { return rect; }
 
-private:
+protected:
 	IMAGE& img;
 	RECT rect;
 };
 
-bool AddEnemy(vector<Enemy*> &es, IMAGE& enemyimg)
+class EBullet : public Bullet
 {
-	Enemy* e = new Enemy(enemyimg, abs(rand()) % (swidth - enemyimg.getwidth()));
+public:
+	EBullet(IMAGE& img, RECT pr)
+		:Bullet(img, pr)
+	{
+		rect.left = pr.left + (pr.right - pr.left) / 2 - img.getwidth() / 2;
+		rect.right = rect.left + img.getwidth();
+		rect.top = pr.bottom;
+		rect.bottom = rect.top + img.getheight();
+	}
+	bool Show()
+	{
+		if (rect.top >= sheight)
+		{
+			return false;
+		}
+		rect.top += 5;
+		rect.bottom += 5;
+		putimage(rect.left, rect.top, &img);
+
+		return true;
+	}
+};
+
+
+bool AddEnemy(vector<Enemy*>& es, IMAGE& enemyimg, IMAGE* boom)
+{
+	Enemy* e = new Enemy(enemyimg, abs(rand()) % (swidth - enemyimg.getwidth()), boom);
 	for (auto& i : es)
 	{
 		if (RectDuangRect(i->GetRect(), e->GetRect()))
@@ -238,42 +307,58 @@ bool Play()
 	bool is_play = true;
 
 	IMAGE heroimg, enemyimg, bkimg, bulletimg;
-	loadimage(&heroimg, _T("E:\\Code\\C++\\images\\images\\me1.png"));
-	loadimage(&enemyimg, _T("E:\\Code\\C++\\images\\images\\enemy1.png"));
-	loadimage(&bkimg, _T("E:\\Code\\C++\\images\\images\\bk2.png"), swidth, sheight * 2);
-	loadimage(&bulletimg, _T("E:\\Code\\C++\\images\\images\\bullet1.png"));
+	IMAGE eboom[3];
+
+	loadimage(&heroimg, _T("../images/me1.png"));
+	loadimage(&enemyimg, _T("../images/enemy1.png"));
+	loadimage(&bkimg, _T("../images/bk2.png"), swidth, sheight * 2);
+	loadimage(&bulletimg, _T("../images/bullet1.png"));
+
+	loadimage(&eboom[0], _T("../images/enemy1_down2.png"));
+	loadimage(&eboom[1], _T("../images/enemy1_down3.png"));
+	loadimage(&eboom[2], _T("../images/enemy1_down4.png"));
 
 	BK bk = BK(bkimg);
 	Hero hp = Hero(heroimg);
 
 	vector<Enemy*> es;
 	vector<Bullet*> bs;
+	vector<EBullet*> ebs;
 	int bsing = 0;
+
+	clock_t hurtlast = clock();
 
 	unsigned long long kill = 0;
 
 	for (int i = 0; i < 5; i++)
 	{
-		AddEnemy(es, enemyimg);
+		AddEnemy(es, enemyimg, eboom);
 	}
 
 	while (is_play)
 	{
 		bsing++;
-		if (bsing == 10)
+		if (bsing % 10 == 0)
+		{
+			bs.push_back(new Bullet(bulletimg, hp.GetRect()));
+		}
+		if (bsing == 60)
 		{
 			bsing = 0;
-			bs.push_back(new Bullet(bulletimg, hp.GetRect()));
+			for (auto& i : es)
+			{
+				ebs.push_back(new EBullet(bulletimg, i->GetRect()));
+			}
 		}
 
 		BeginBatchDraw();
 
 		bk.Show();
-		Sleep(6);
-		
+		Sleep(2);
 		flushmessage();
 		Sleep(2);
 		hp.Control();
+
 		if (_kbhit())
 		{
 			char v = _getch();
@@ -296,9 +381,39 @@ bool Play()
 		}
 		hp.Show();
 
-		for (auto& i : bs)
+		auto bsit = bs.begin();
+		while (bsit != bs.end())
 		{
-			i->Show();
+			if (!(*bsit)->Show())
+			{
+				bsit = bs.erase(bsit);
+			}
+			else
+			{
+				bsit++;
+			}
+		}
+
+		auto ebsit = ebs.begin();
+		while (ebsit != ebs.end())
+		{
+			if (!(*ebsit)->Show())
+			{
+				ebsit = ebs.erase(ebsit);
+			}
+			else
+			{
+				if (RectDuangRect((*ebsit)->GetRect(), hp.GetRect()))
+				{
+					if (clock() - hurtlast >= hurttime)
+					{
+						is_play = hp.hurt();
+						hurtlast = clock();
+					}
+				}
+				ebsit++;
+			}
+			
 		}
 
 		auto it = es.begin();
@@ -306,16 +421,18 @@ bool Play()
 		{
 			if (RectDuangRect((*it)->GetRect(), hp.GetRect()))
 			{
-				is_play = false;
+				if (clock() - hurtlast >= hurttime)
+				{
+					is_play = hp.hurt();
+					hurtlast = clock();
+				}
 			}
 			auto bit = bs.begin();
 			while (bit != bs.end())
 			{
 				if (RectDuangRect((*bit)->GetRect(), (*it)->GetRect()))
 				{
-					delete (*it);
-					es.erase(it);
-					it = es.begin();
+					(*it)->Isdie();
 					delete (*bit);
 					bs.erase(bit);
 
@@ -335,11 +452,12 @@ bool Play()
 		}
 		for (int i = 0; i < 5 - es.size(); i++)
 		{
-			AddEnemy(es, enemyimg);
+			AddEnemy(es, enemyimg, eboom);
 		}
 
 		EndBatchDraw();
 	}
+	printf_s("e");
 	Over(kill);
 
 	return true;
