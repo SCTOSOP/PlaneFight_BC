@@ -7,3 +7,5 @@ vs版本2022
 素材在images里，Play函数中loadimage()里的素材路径需要自己改一下哦~
 
 界面美化、功能添加欢迎 pull requests！
+
+**作者最近在忙[这个项目](https://github.com/SCTOSOP/MaL)，快来围观（doge）**
